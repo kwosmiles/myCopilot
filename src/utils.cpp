@@ -7,7 +7,7 @@
 #include <windows.h>
 #include <fmt/core.h>
 #include <fmt/xchar.h>
-
+#include "config.hpp"
 
 
 
@@ -131,11 +131,11 @@ void RegisterAppBar(HWND hWnd,BAR_EDGE edge) {
     switch (edge)
     {
     case BAR_EDGE::LEFT:
-        workAreaRc.right = workAreaRc.left + 600;
+        workAreaRc.right = workAreaRc.left + Config::dockedWindowWidth;
         abd.uEdge = ABE_LEFT;
         break;
     case BAR_EDGE::RIGHT:
-        workAreaRc.left = workAreaRc.right - 600;
+        workAreaRc.left = workAreaRc.right - Config::dockedWindowWidth;
         abd.uEdge = ABE_RIGHT;
         break;
     default:
