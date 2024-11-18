@@ -1,0 +1,4 @@
+#include "resource.hpp"
+
+IDI_LOGO ICON "favicon.ico"
+IDI_SCRIPT RCDATA "script.js"
