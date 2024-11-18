@@ -21,6 +21,25 @@ Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
     return S_OK;
 });
 
+auto pNewWindowRequestedCallback = 
+Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>
+([](ICoreWebView2 *sender, ICoreWebView2NewWindowRequestedEventArgs *args){
+    wil::unique_cotaskmem_string uri;
+    args->get_Uri(&uri);
+    HINSTANCE result = ShellExecuteW(NULL, L"open", uri.get(), NULL, NULL, SW_SHOWNORMAL);
+
+    //使用reinterpret_cast将HINSTANCE转换为uintptr_t
+    //以避免指针截断
+    succeeded(
+        reinterpret_cast<uintptr_t>(result) > 32,
+        WARNING,
+        L"调用系统浏览器失败"
+    );
+    args->put_Handled(TRUE);
+    return S_OK;
+});
+
+
 //创建webview控制器回调函数
 auto pCreateControllerCallback = 
 Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>
@@ -44,7 +63,8 @@ Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandl
     }
     webview->Navigate(Config::index.c_str());
     webview->add_NavigationCompleted(pNavigationCompletedCallback.Get(), nullptr);
-    
+    webview->add_NewWindowRequested(pNewWindowRequestedCallback.Get(),nullptr);
+
     //修改webview2大小适应窗口
     RECT bounds;
     GetClientRect(hMainWin, &bounds);
