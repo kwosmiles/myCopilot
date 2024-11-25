@@ -26,3 +26,10 @@
 [webview2](https://learn.microsoft.com/en-us/microsoft-edge/webview2/)
 [fmt](https://github.com/fmtlib/fmt)
 [simpleini](https://github.com/brofield/simpleini)
+
+
+## Change Log
+* fixed: 
+1：修复边缘停靠显示隐藏时，窗口位置重置的问题，
+2：将边缘停靠的宽度改为可在配置文件中修改，
+3：每次呼出，窗口均在最前端

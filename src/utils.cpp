@@ -10,13 +10,12 @@
 #include "config.hpp"
 
 
-
-
 extern HWND hMainWin;
 extern NOTIFYICONDATA nid;
 extern Window_Info winInfo;
 
 int LoadWindowInfo(std::wstring iniFile, Window_Info& info) {
+    info.Width = 500;
 	CSimpleIniA ini;
 	SI_Error rc = ini.LoadFile(iniFile.c_str());
 	if (rc < 0) { return -1; };
@@ -25,12 +24,11 @@ int LoadWindowInfo(std::wstring iniFile, Window_Info& info) {
     info.WinRect.right = _ttoi(ini.GetValue("Window", "Right"));
     info.WinRect.bottom = _ttoi(ini.GetValue("Window", "Bottom"));
     info.state = static_cast<WIN_STATE>(_ttoi(ini.GetValue("Window", "State")));
+    info.Width = _ttoi(ini.GetValue("Window", "Width"));
     return 1;
 }
 
-
 int SaveWindowInfo(std::wstring iniFile, const Window_Info& info) {
-
     CSimpleIniA ini;
     TCHAR buffer[256];
     _itot(info.WinRect.left,buffer,10);
@@ -44,33 +42,13 @@ int SaveWindowInfo(std::wstring iniFile, const Window_Info& info) {
 
     _itot((int)info.state,buffer,10);
     ini.SetValue("Window", "State", buffer);
+    _itot((int)info.Width, buffer, 10);
+    ini.SetValue("Window", "Width", buffer);
 
     SI_Error rc = ini.SaveFile(iniFile.c_str());
 	if (rc < 0) { /* handle error */ };
 
     return true;
-}
-
-
-void UnregisterAppBar(HWND hWnd) {
-    APPBARDATA abd;
-    abd.cbSize = sizeof(APPBARDATA);
-    abd.hWnd = hWnd;
-    SHAppBarMessage(ABM_REMOVE, &abd);
-}
-
-void removeFrame(HWND hWnd){
-    LONG_PTR style = GetWindowLongPtr(hWnd, GWL_STYLE);
-    style &= ~WS_THICKFRAME & ~WS_CAPTION;
-    SetWindowLongPtr(hWnd, GWL_STYLE, style);
-}
-
-void addFrame(HWND hWnd) {
-    LONG_PTR style = GetWindowLongPtr(hWnd, GWL_STYLE);
-    style |= WS_THICKFRAME | WS_CAPTION;
-    SetWindowLongPtr(hWnd, GWL_STYLE, style);
-    SetWindowPos(hWnd, NULL, 0, 0, 0, 0,
-                 SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
 std::wstring readAppJsResource() {
@@ -111,6 +89,11 @@ void ShowTrayMenu(HWND hWnd) {
     DestroyMenu(hMenu);
 }
 
+// 判断窗口是否在最前面
+bool IsWindowInForeground(HWND hWnd) {
+    HWND hForegroundWnd = GetForegroundWindow();
+    return (hWnd == hForegroundWnd);
+}
 
 void getWindowRect() {
     LONG_PTR style = GetWindowLongPtr(hMainWin, GWL_STYLE);
@@ -119,83 +102,106 @@ void getWindowRect() {
     }
 }
 
+void setWindowRect(RECT rect) {
+    if (winInfo.state == WIN_STATE::SHOW)
+        winInfo.WinRect = rect;
+}
 
-void RegisterAppBar(HWND hWnd,BAR_EDGE edge) {
+void showEdgeWindow(HWND hWnd , RECT rect , bool withFrame,bool left) {
+    LONG_PTR style = GetWindowLongPtr(hWnd, GWL_STYLE);
+    if (withFrame) {
+        style |= WS_THICKFRAME | WS_CAPTION;
+    }
+    else {
+        style &= ~WS_THICKFRAME & ~WS_CAPTION;
+    }
+    SetWindowLongPtr(hWnd, GWL_STYLE, style);
     APPBARDATA abd;
     abd.cbSize = sizeof(APPBARDATA);
     abd.hWnd = hWnd;
     abd.uCallbackMessage = WM_ABDMSG;
     SHAppBarMessage(ABM_NEW, &abd);
-    RECT workAreaRc;
-    SystemParametersInfo(SPI_GETWORKAREA, 0, &workAreaRc, 0);
-    switch (edge)
-    {
-    case BAR_EDGE::LEFT:
-        workAreaRc.right = workAreaRc.left + Config::dockedWindowWidth;
+    if (left) {
         abd.uEdge = ABE_LEFT;
-        break;
-    case BAR_EDGE::RIGHT:
-        workAreaRc.left = workAreaRc.right - Config::dockedWindowWidth;
-        abd.uEdge = ABE_RIGHT;
-        break;
-    default:
-        break;
     }
-    abd.rc = workAreaRc;
-    SHAppBarMessage(ABM_QUERYPOS, &abd);
+    else {
+        abd.uEdge = ABE_RIGHT;
+    }
+    abd.rc = rect;
+    SHAppBarMessage(ABM_QUERYPOS, &abd); 
     SHAppBarMessage(ABM_SETPOS, &abd);
 
-    //创建新线程来设置窗口位置
-    //是为了避免一个bug：
-    //在当前情况下
-    //windows似乎会干扰窗口位置的修改
-    //即使APPBARDATA已被释放
-    //窗口的位置有1/2的概率被移动到APPBARDATA之外
-    ExecuteWithDelay([hWnd,workAreaRc](){
-        SetWindowPos(hWnd, NULL, workAreaRc.left, workAreaRc.top, 
-        workAreaRc.right - workAreaRc.left,
-        workAreaRc.bottom - workAreaRc.top, NULL);
-        ShowWindow(hMainWin, SW_SHOW);
-    }, 1);
-    
-    
+    SetWindowPos(hWnd, HWND_TOP, rect.left, rect.top,rect.right - rect.left, rect.bottom - rect.top, SWP_SHOWWINDOW);
 }
 
-void reapplyWindowSettings(){
-    switch (winInfo.state)
-    {
+void hideWindow(HWND hWnd) {
+    APPBARDATA abd;
+    abd.cbSize = sizeof(APPBARDATA);
+    abd.hWnd = hWnd;
+    SHAppBarMessage(ABM_REMOVE, &abd);
+    SetWindowPos(hWnd, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
+        winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
+}
+
+void reApplyWindowSettings(bool forceShowWnd){
+    RECT screenRc;
+    SystemParametersInfo(SPI_GETWORKAREA, 0, &screenRc, 0);
+    LONG_PTR style = GetWindowLongPtr(hMainWin, GWL_STYLE);
+    switch (winInfo.state){
     case WIN_STATE::LEFT:
-        removeFrame(hMainWin);
-        RegisterAppBar(hMainWin,BAR_EDGE::LEFT);
+        if (!IsWindowVisible(hMainWin) || forceShowWnd) {
+            screenRc.right = screenRc.left + winInfo.Width;
+            showEdgeWindow(hMainWin, screenRc, false, true); 
+        }
+        else {
+            hideWindow(hMainWin);
+        }
         break;
     case WIN_STATE::RIGHT:
-        removeFrame(hMainWin);
-        RegisterAppBar(hMainWin,BAR_EDGE::RIGHT);
+        if (!IsWindowVisible(hMainWin) || forceShowWnd) {
+            screenRc.left = screenRc.right - winInfo.Width;
+            showEdgeWindow(hMainWin, screenRc, false, false);
+        }
+        else {
+            hideWindow(hMainWin);
+        }
         break;
-    
+    case WIN_STATE::SHOW:
+        style |= WS_THICKFRAME | WS_CAPTION;
+        SetWindowLongPtr(hMainWin, GWL_STYLE, style);
+        if (!IsWindowVisible(hMainWin) || forceShowWnd) {
+            APPBARDATA abd;
+            abd.cbSize = sizeof(APPBARDATA);
+            abd.hWnd = hMainWin;
+            SHAppBarMessage(ABM_REMOVE, &abd);
+            SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
+                winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top,
+                SWP_SHOWWINDOW); 
+            SetForegroundWindow(hMainWin);
+        }
+        else {
+            if (IsWindowInForeground(hMainWin)) {
+                SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
+                    winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
+            }
+            else {
+                SetForegroundWindow(hMainWin);
+            }
+        }
+        break;
+    case WIN_STATE::HIDE:
+        style |= WS_THICKFRAME | WS_CAPTION;
+        SetWindowLongPtr(hMainWin, GWL_STYLE, style);
+        if (IsWindowVisible(hMainWin)) {
+            SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
+                winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
+        }
+        break;
     default:
-        UnregisterAppBar(hMainWin);
-        addFrame(hMainWin);
-        SetWindowPos(hMainWin, NULL, winInfo.WinRect.left, winInfo.WinRect.top, 
-                    winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, 
-                    SWP_NOZORDER);
-        ShowWindow(hMainWin, SW_SHOW);
         break;
     }
 }
 
-
-void ExecuteWithDelay(std::function<void()> func, int delay) {
-    auto threadFunc = [](void* param) -> DWORD {
-        auto [func, delay] = *static_cast<std::pair<std::function<void()>, int>*>(param);
-        Sleep(delay);
-        func();
-        delete static_cast<std::pair<std::function<void()>, int>*>(param);
-        return 0;
-    };
-    auto* param = new std::pair<std::function<void()>, int>(func, delay);
-    CreateThread(NULL, 0, threadFunc, param, 0, NULL);
-}
 void succeeded(BOOL result,int type,std::wstring msg){
     if(!result){
         MessageBoxW(NULL,msg.c_str(),fmt::format(L"错误码:{}",GetLastError()).c_str(),MB_OK|(type?MB_ICONWARNING:MB_ICONERROR));

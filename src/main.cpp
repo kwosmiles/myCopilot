@@ -96,12 +96,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
         fmt::format(L"设置全局快捷键{}+{}失败",Config::fsModifiers,Config::vk)
     );
 
-    reapplyWindowSettings();
+    reApplyWindowSettings(true);
 
     //创建webview2环境
 	CreateCoreWebView2EnvironmentWithOptions(nullptr,Config::userDataFolder.c_str() , nullptr,pCreateEnvCallback.Get());
-
-
 
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))
@@ -120,18 +118,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
 //事件循环回调函数
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	switch (message)
-	{
+	switch (message){
     case WM_HOTKEY:
         if (wParam == 5 || wParam == 6) {
-            if(IsWindowVisible(hMainWin)){
-                //隐藏时先获取一下窗口现在的位置，以便恢复
-                getWindowRect();
-                ShowWindow(hMainWin, SW_HIDE);
-                UnregisterAppBar(hMainWin);
-            }else{
-                reapplyWindowSettings();
-            }
+            reApplyWindowSettings();
         }
         break;
     case WM_CLOSE:
@@ -142,7 +132,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         Shell_NotifyIcon(NIM_DELETE, &nid);
 		PostQuitMessage(0);
 		break;
+    case WM_MOVE:
     case WM_SIZE:
+        RECT rect;
+        GetWindowRect(hWnd, &rect);
+        setWindowRect(rect);
         if(webviewController != nullptr){
             RECT bounds;
             GetClientRect(hMainWin, &bounds);
@@ -150,52 +144,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_TRAYICON:
-            if (lParam == WM_RBUTTONUP) {
-                ShowTrayMenu(hWnd);
-            }
-            if (lParam == WM_LBUTTONUP) {
-                if(IsWindowVisible(hMainWin)){
-                    getWindowRect();
-                    ShowWindow(hMainWin, SW_HIDE);
-                    UnregisterAppBar(hMainWin);
-                }else{
-                    reapplyWindowSettings();
-                }
-            }
-            break;
+        if (lParam == WM_RBUTTONUP) {
+            ShowTrayMenu(hWnd);
+        } 
+        break;
     case WM_COMMAND:
+        WIN_STATE preState;
         switch (LOWORD(wParam)) {
-            case ID_TRAY_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            case ID_TRAY_KEEPLEFT:
-                winInfo.state=WIN_STATE::LEFT;
-                getWindowRect();
-                removeFrame(hMainWin);
-                RegisterAppBar(hMainWin,BAR_EDGE::LEFT);
-                ShowWindow(hMainWin, SW_SHOW);
-                break;
-            case ID_TRAY_KEEPRIGHT:
-                winInfo.state=WIN_STATE::RIGHT;
-                getWindowRect();
-                removeFrame(hMainWin);
-                RegisterAppBar(hMainWin,BAR_EDGE::RIGHT);
-                ShowWindow(hMainWin, SW_SHOW);
-                break;
-            case ID_TRAY_RESUME:
-                winInfo.state=WIN_STATE::SHOW;
-                UnregisterAppBar(hMainWin);
-                addFrame(hMainWin);
-                SetWindowPos(hWnd, NULL, winInfo.WinRect.left, winInfo.WinRect.top, 
-                winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_NOZORDER);
-                ShowWindow(hMainWin, SW_SHOW);
-                break;
-            case ID_TRAY_HIDE:
-                getWindowRect();
-                ShowWindow(hMainWin, SW_HIDE);
-                UnregisterAppBar(hMainWin);
-                break;
+        case ID_TRAY_EXIT:
+            DestroyWindow(hWnd);
+            break;
+        case ID_TRAY_KEEPLEFT:
+            preState = winInfo.state;
+            winInfo.state=WIN_STATE::LEFT;
+            reApplyWindowSettings(preState != winInfo.state);
+            break;
+        case ID_TRAY_KEEPRIGHT:
+            preState = winInfo.state;
+            winInfo.state=WIN_STATE::RIGHT;
+            reApplyWindowSettings(preState != winInfo.state);
+            break;
+        case ID_TRAY_RESUME:
+            preState = winInfo.state;
+            winInfo.state=WIN_STATE::SHOW;
+            reApplyWindowSettings(preState != winInfo.state);
+            break;
+        case ID_TRAY_HIDE:
+            preState = winInfo.state;
+            winInfo.state = WIN_STATE::SHOW;
+            reApplyWindowSettings(preState != winInfo.state);
+            break;
         }
+        break;
 	default:
 		return DefWindowProc(hWnd, message, wParam, lParam);
 		break;

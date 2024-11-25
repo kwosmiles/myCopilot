@@ -42,6 +42,7 @@ class Window_Info{
 public:
     RECT WinRect;
     WIN_STATE state;
+    LONG Width;
 };
 
 //从资源文件中读取js脚本文件
@@ -75,12 +76,14 @@ void ShowTrayMenu(HWND hWnd);
 //从当前窗口获取窗口大小和位置保存到Window_Info.RECT中
 void getWindowRect();
 
+void setWindowRect(RECT rect);
+
 //注册APP栏停靠区域
 void RegisterAppBar(HWND hWnd,BAR_EDGE edge);
 
 //从Window_Info中获取窗口配置，复原窗口状态
 //当窗口状态为HIDE时会被当作SHOW处理
-void reapplyWindowSettings();
+void reApplyWindowSettings(bool forceShowWnd = false);
 
 //启动一个新线程来延时处理函数，不阻塞当前线程的运行
 void ExecuteWithDelay(std::function<void()> func, int delay);
@@ -89,3 +92,6 @@ void ExecuteWithDelay(std::function<void()> func, int delay);
 //当type为WARNING时，仅警告
 //当type为ERROR时，报错并退出应用程序
 void succeeded(BOOL result,int type,std::wstring msg);
+
+bool IsWindowInForeground(HWND hWnd);
+bool IsWindowActive(HWND hWnd);
