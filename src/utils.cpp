@@ -170,10 +170,6 @@ void reApplyWindowSettings(bool forceShowWnd){
         style |= WS_THICKFRAME | WS_CAPTION;
         SetWindowLongPtr(hMainWin, GWL_STYLE, style);
         if (!IsWindowVisible(hMainWin) || forceShowWnd) {
-            APPBARDATA abd;
-            abd.cbSize = sizeof(APPBARDATA);
-            abd.hWnd = hMainWin;
-            SHAppBarMessage(ABM_REMOVE, &abd);
             SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
                 winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top,
                 SWP_SHOWWINDOW); 

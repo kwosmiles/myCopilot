@@ -30,7 +30,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         HWND hWnd = FindWindow(_T("Copilot_UniqueWindowClass"),NULL);
         if (hWnd) {
-            if (IsIconic(hWnd)) {
+            if (!IsWindowVisible(hWnd)) {
                 ShowWindow(hWnd, SW_SHOW);
             } else {
                 SetForegroundWindow(hWnd);
@@ -119,6 +119,13 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message){
+    case WM_ACTIVATE:
+        if (wParam != WA_INACTIVE) {
+            if (webviewController != nullptr) {
+                webviewController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+            }
+        }
+        break;
     case WM_HOTKEY:
         if (wParam == 5 || wParam == 6) {
             reApplyWindowSettings();
