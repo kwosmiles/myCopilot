@@ -149,39 +149,54 @@ void reApplyWindowSettings(bool forceShowWnd){
     LONG_PTR style = GetWindowLongPtr(hMainWin, GWL_STYLE);
     switch (winInfo.state){
     case WIN_STATE::LEFT:
-        if (!IsWindowVisible(hMainWin) || forceShowWnd) {
-            screenRc.right = screenRc.left + winInfo.Width;
-            showEdgeWindow(hMainWin, screenRc, false, true); 
+        if (IsIconic(hMainWin)) {
+            ShowWindow(hMainWin, SW_RESTORE); // 显示窗口
         }
         else {
-            hideWindow(hMainWin);
+            if (!IsWindowVisible(hMainWin) || forceShowWnd) {
+                screenRc.right = screenRc.left + winInfo.Width;
+                showEdgeWindow(hMainWin, screenRc, false, true);
+            }
+            else {
+                hideWindow(hMainWin);
+            }
         }
         break;
     case WIN_STATE::RIGHT:
-        if (!IsWindowVisible(hMainWin) || forceShowWnd) {
-            screenRc.left = screenRc.right - winInfo.Width;
-            showEdgeWindow(hMainWin, screenRc, false, false);
+        if (IsIconic(hMainWin)) {
+            ShowWindow(hMainWin, SW_RESTORE); // 显示窗口
         }
         else {
-            hideWindow(hMainWin);
+            if (!IsWindowVisible(hMainWin) || forceShowWnd) {
+                screenRc.left = screenRc.right - winInfo.Width;
+                showEdgeWindow(hMainWin, screenRc, false, false);
+            }
+            else {
+                hideWindow(hMainWin);
+            }
         }
         break;
     case WIN_STATE::SHOW:
         style |= WS_THICKFRAME | WS_CAPTION;
         SetWindowLongPtr(hMainWin, GWL_STYLE, style);
-        if (!IsWindowVisible(hMainWin) || forceShowWnd) {
-            SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
-                winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top,
-                SWP_SHOWWINDOW); 
-            SetForegroundWindow(hMainWin);
+        if (IsIconic(hMainWin)) {
+            ShowWindow(hMainWin, SW_RESTORE); // 显示窗口
         }
         else {
-            if (IsWindowInForeground(hMainWin)) {
+            if (!IsWindowVisible(hMainWin) || forceShowWnd) {
                 SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
-                    winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
+                    winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top,
+                    SWP_SHOWWINDOW);
+                SetForegroundWindow(hMainWin);
             }
             else {
-                SetForegroundWindow(hMainWin);
+                if (IsWindowInForeground(hMainWin)) {
+                    SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
+                        winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
+                }
+                else {
+                    SetForegroundWindow(hMainWin);
+                }
             }
         }
         break;

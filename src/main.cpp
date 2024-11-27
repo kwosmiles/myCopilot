@@ -30,10 +30,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         HWND hWnd = FindWindow(_T("Copilot_UniqueWindowClass"),NULL);
         if (hWnd) {
-            if (!IsWindowVisible(hWnd)) {
-                ShowWindow(hWnd, SW_SHOW);
-            } else {
-                SetForegroundWindow(hWnd);
+            if (IsIconic(hWnd)) {
+                ShowWindow(hWnd, SW_RESTORE); // 显示窗口
+            }
+            else {
+                if (!IsWindowVisible(hWnd)) {
+                    ShowWindow(hWnd, SW_SHOW);
+                }
+                else {
+                    SetForegroundWindow(hWnd);
+                }
             }
         }
         CloseHandle(hMutex);
