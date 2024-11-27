@@ -36,6 +36,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
             else {
                 if (!IsWindowVisible(hWnd)) {
                     ShowWindow(hWnd, SW_SHOW);
+                    SetForegroundWindow(hWnd);
                 }
                 else {
                     SetForegroundWindow(hWnd);
