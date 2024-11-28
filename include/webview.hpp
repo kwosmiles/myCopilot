@@ -61,7 +61,7 @@ Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandl
         COREWEBVIEW2_COLOR color = {0,0,0,0};//B,?,?,?
         controller2->put_DefaultBackgroundColor(color);
     }
-    webview->Navigate(Config::index.c_str());
+    webview->Navigate(GetIndex().c_str());
     webview->add_NavigationCompleted(pNavigationCompletedCallback.Get(), nullptr);
     webview->add_NewWindowRequested(pNewWindowRequestedCallback.Get(),nullptr);
 

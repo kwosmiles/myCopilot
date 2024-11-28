@@ -10,15 +10,35 @@
 #include "config.hpp"
 
 
+
+
 extern HWND hMainWin;
 extern NOTIFYICONDATA nid;
-extern Window_Info winInfo;
+extern WINDOWSATUSINFO winInfo;
 
-int LoadWindowInfo(std::wstring iniFile, Window_Info& info) {
-    info.Width = 500;
+std::wstring StringToWString(const std::string& str) {
+    std::wstring wstr(str.begin(), str.end()); 
+    return wstr;
+}
+
+std::string WStringToString(const std::wstring& wstr) {
+    std::string str(wstr.begin(), wstr.end());
+    return str;
+}
+
+int loadWindowInfo(std::wstring iniFile, WINDOWSATUSINFO& info) {
 	CSimpleIniA ini;
+    info.Width = 500;
+    info.Index = L"https://copilot.microsoft.com/";
+    info.WinRect.left = 100;
+    info.WinRect.top = 100;
+    info.WinRect.right = 1100;
+    info.WinRect.bottom = 900;
 	SI_Error rc = ini.LoadFile(iniFile.c_str());
 	if (rc < 0) { return -1; };
+   
+    const char* pVal = ini.GetValue("Window", "Index","https://copilot.microsoft.com/");
+    info.Index = StringToWString(pVal);
     info.WinRect.left = _ttoi(ini.GetValue("Window", "Left"));
     info.WinRect.top = _ttoi(ini.GetValue("Window", "Top"));
     info.WinRect.right = _ttoi(ini.GetValue("Window", "Right"));
@@ -28,9 +48,17 @@ int LoadWindowInfo(std::wstring iniFile, Window_Info& info) {
     return 1;
 }
 
-int SaveWindowInfo(std::wstring iniFile, const Window_Info& info) {
+std::wstring GetIndex() {
+    return winInfo.Index;
+}
+
+
+int saveWindowInfo(std::wstring iniFile, const WINDOWSATUSINFO& info) {
+
     CSimpleIniA ini;
     TCHAR buffer[256];
+    std::string value = WStringToString(info.Index);
+    ini.SetValue("Window", "Index", value.c_str());
     _itot(info.WinRect.left,buffer,10);
     ini.SetValue("Window", "Left", buffer);
     _itot(info.WinRect.top,buffer,10);
@@ -51,6 +79,7 @@ int SaveWindowInfo(std::wstring iniFile, const Window_Info& info) {
     return true;
 }
 
+
 std::wstring readAppJsResource() {
     HMODULE hModule = GetModuleHandle(NULL);
     HRSRC hResource = FindResource(hModule, MAKEINTRESOURCE(IDI_SCRIPT), RT_RCDATA);
@@ -61,163 +90,87 @@ std::wstring readAppJsResource() {
     return std::wstring(pResourceData, pResourceData + resourceSize);
 }
 
-void AddTrayIcon(HWND hWnd,HINSTANCE hInstance) {
-    nid.cbSize = sizeof(NOTIFYICONDATA);
-    nid.hWnd = hWnd;
-    nid.uID = ID_TRAY_EXIT;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_LOGO));;
-    strcpy_s(nid.szTip, "Copilot");
-
-    Shell_NotifyIcon(NIM_ADD, &nid);
-}
-
-void ShowTrayMenu(HWND hWnd) {
-    POINT pt;
-    GetCursorPos(&pt);
-
-    HMENU hMenu = CreatePopupMenu();
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_KEEPLEFT, L"靠左固定");
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_KEEPRIGHT, L"靠右固定");
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_RESUME, L"悬浮窗口");
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_HIDE, L"隐藏窗口");
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出程序");
-
-    SetForegroundWindow(hWnd);
-    TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, NULL);
-    DestroyMenu(hMenu);
-}
-
-// 判断窗口是否在最前面
-bool IsWindowInForeground(HWND hWnd) {
-    HWND hForegroundWnd = GetForegroundWindow();
-    return (hWnd == hForegroundWnd);
-}
-
-void getWindowRect() {
-    LONG_PTR style = GetWindowLongPtr(hMainWin, GWL_STYLE);
-    if((style & WS_THICKFRAME) && (style & WS_CAPTION)){
-        GetWindowRect(hMainWin, &winInfo.WinRect);
+void loadRectTo(WINDOWSATUSINFO &info) {
+    if(!IsIconic(hMainWin)&&IsWindowVisible(hMainWin)&&winInfo.state==WIN_STATE::FLAOT){
+        GetWindowRect(hMainWin, &info.WinRect);
     }
 }
 
-void setWindowRect(RECT rect) {
-    if (winInfo.state == WIN_STATE::SHOW)
-        winInfo.WinRect = rect;
+void setTimeout(std::function<void()> func, int delay) {
+    auto threadFunc = [](void* param) -> DWORD {
+        auto [func, delay] = *static_cast<std::pair<std::function<void()>, int>*>(param);
+        Sleep(delay);
+        func();
+        delete static_cast<std::pair<std::function<void()>, int>*>(param);
+        return 0;
+    };
+    auto* param = new std::pair<std::function<void()>, int>(func, delay);
+    CreateThread(NULL, 0, threadFunc, param, 0, NULL);
 }
-
-void showEdgeWindow(HWND hWnd , RECT rect , bool withFrame,bool left) {
-    LONG_PTR style = GetWindowLongPtr(hWnd, GWL_STYLE);
-    if (withFrame) {
-        style |= WS_THICKFRAME | WS_CAPTION;
-    }
-    else {
-        style &= ~WS_THICKFRAME & ~WS_CAPTION;
-    }
-    SetWindowLongPtr(hWnd, GWL_STYLE, style);
-    APPBARDATA abd;
-    abd.cbSize = sizeof(APPBARDATA);
-    abd.hWnd = hWnd;
-    abd.uCallbackMessage = WM_ABDMSG;
-    SHAppBarMessage(ABM_NEW, &abd);
-    if (left) {
-        abd.uEdge = ABE_LEFT;
-    }
-    else {
-        abd.uEdge = ABE_RIGHT;
-    }
-    abd.rc = rect;
-    SHAppBarMessage(ABM_QUERYPOS, &abd); 
-    SHAppBarMessage(ABM_SETPOS, &abd);
-
-    SetWindowPos(hWnd, HWND_TOP, rect.left, rect.top,rect.right - rect.left, rect.bottom - rect.top, SWP_SHOWWINDOW);
-}
-
-void hideWindow(HWND hWnd) {
-    APPBARDATA abd;
-    abd.cbSize = sizeof(APPBARDATA);
-    abd.hWnd = hWnd;
-    SHAppBarMessage(ABM_REMOVE, &abd);
-    SetWindowPos(hWnd, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
-        winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
-}
-
-void reApplyWindowSettings(bool forceShowWnd){
-    RECT screenRc;
-    SystemParametersInfo(SPI_GETWORKAREA, 0, &screenRc, 0);
-    LONG_PTR style = GetWindowLongPtr(hMainWin, GWL_STYLE);
-    switch (winInfo.state){
-    case WIN_STATE::LEFT:
-        if (IsIconic(hMainWin)) {
-            ShowWindow(hMainWin, SW_RESTORE); // 显示窗口
-        }
-        else {
-            if (!IsWindowVisible(hMainWin) || forceShowWnd) {
-                screenRc.right = screenRc.left + winInfo.Width;
-                showEdgeWindow(hMainWin, screenRc, false, true);
-            }
-            else {
-                hideWindow(hMainWin);
-            }
-        }
-        break;
-    case WIN_STATE::RIGHT:
-        if (IsIconic(hMainWin)) {
-            ShowWindow(hMainWin, SW_RESTORE); // 显示窗口
-        }
-        else {
-            if (!IsWindowVisible(hMainWin) || forceShowWnd) {
-                screenRc.left = screenRc.right - winInfo.Width;
-                showEdgeWindow(hMainWin, screenRc, false, false);
-            }
-            else {
-                hideWindow(hMainWin);
-            }
-        }
-        break;
-    case WIN_STATE::SHOW:
-        style |= WS_THICKFRAME | WS_CAPTION;
-        SetWindowLongPtr(hMainWin, GWL_STYLE, style);
-        if (IsIconic(hMainWin)) {
-            ShowWindow(hMainWin, SW_RESTORE); // 显示窗口
-        }
-        else {
-            if (!IsWindowVisible(hMainWin) || forceShowWnd) {
-                SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
-                    winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top,
-                    SWP_SHOWWINDOW);
-                SetForegroundWindow(hMainWin);
-            }
-            else {
-                if (IsWindowInForeground(hMainWin)) {
-                    SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
-                        winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
-                }
-                else {
-                    SetForegroundWindow(hMainWin);
-                }
-            }
-        }
-        break;
-    case WIN_STATE::HIDE:
-        style |= WS_THICKFRAME | WS_CAPTION;
-        SetWindowLongPtr(hMainWin, GWL_STYLE, style);
-        if (IsWindowVisible(hMainWin)) {
-            SetWindowPos(hMainWin, HWND_TOP, winInfo.WinRect.left, winInfo.WinRect.top,
-                winInfo.WinRect.right - winInfo.WinRect.left, winInfo.WinRect.bottom - winInfo.WinRect.top, SWP_HIDEWINDOW);
-        }
-        break;
-    default:
-        break;
-    }
-}
-
 void succeeded(BOOL result,int type,std::wstring msg){
     if(!result){
-        MessageBoxW(NULL,msg.c_str(),fmt::format(L"错误码:{}",GetLastError()).c_str(),MB_OK|(type?MB_ICONWARNING:MB_ICONERROR));
+        std::wstring errorMessage = L"错误码: " + std::to_wstring(GetLastError());
+        MessageBoxW(NULL,msg.c_str(),errorMessage.c_str(),MB_OK|(type?MB_ICONWARNING:MB_ICONERROR));
         if(type==ERROR){
             PostQuitMessage(0);
+        }
+    }
+}
+
+void copilotShow(WIN_STATE state){
+    APPBARDATA abd;
+    abd.cbSize = sizeof(APPBARDATA);
+    abd.uCallbackMessage = WM_ABDMSG;
+    abd.hWnd = hMainWin;
+    SHAppBarMessage(ABM_REMOVE, &abd);
+    switch (state)
+    {
+    case WIN_STATE::HIDE:
+        loadRectTo(winInfo);
+        ShowWindow(hMainWin, SW_HIDE);
+        break;
+    case WIN_STATE::FLAOT:{
+            int x = winInfo.WinRect.left;
+            int y = winInfo.WinRect.top;
+            int w = winInfo.WinRect.right-winInfo.WinRect.left;
+            int h = winInfo.WinRect.bottom-winInfo.WinRect.top;
+            SetWindowLongPtr(hMainWin,GWL_STYLE,WS_OVERLAPPEDWINDOW);
+            SetWindowLongPtr(hMainWin,GWL_EXSTYLE,WS_EX_OVERLAPPEDWINDOW);
+            SetWindowPos(hMainWin, HWND_NOTOPMOST, x, y, w, h,SWP_FRAMECHANGED);
+            ShowWindow(hMainWin, SW_SHOW);
+            SetForegroundWindow(hMainWin);
+            break;
+        }
+
+    default:{
+        loadRectTo(winInfo);
+        RECT workAreaRc;
+        SystemParametersInfo(SPI_GETWORKAREA, 0, &workAreaRc, 0);
+        if(state==WIN_STATE::LEFT){
+            workAreaRc.right = workAreaRc.left + winInfo.Width;
+            abd.uEdge = ABE_LEFT;
+        }else if(state==WIN_STATE::RIGHT){
+            workAreaRc.left = workAreaRc.right - winInfo.Width;
+            abd.uEdge = ABE_RIGHT;
+        }
+        abd.rc = workAreaRc;
+        SHAppBarMessage(ABM_NEW, &abd);
+        SHAppBarMessage(ABM_QUERYPOS, &abd);
+        SHAppBarMessage(ABM_SETPOS, &abd);
+        SetWindowLongPtr(hMainWin,GWL_STYLE,WS_POPUP);
+        SetWindowLongPtr(hMainWin,GWL_EXSTYLE,WS_EX_TOOLWINDOW);
+        int x = abd.rc.left;
+        int y = abd.rc.top;
+        int w = abd.rc.right-abd.rc.left;
+        int h = abd.rc.bottom-abd.rc.top;
+        SetWindowPos(hMainWin, HWND_TOPMOST, x, y, w, h, SWP_FRAMECHANGED);
+        if(state==WIN_STATE::LEFT){
+            AnimateWindow(hMainWin, 100,AW_HOR_POSITIVE);
+        }else if(state==WIN_STATE::RIGHT){
+            AnimateWindow(hMainWin, 100,AW_HOR_NEGATIVE);
+        }
+        SetForegroundWindow(hMainWin);
+        break;
         }
     }
 }

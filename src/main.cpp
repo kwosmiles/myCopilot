@@ -19,21 +19,20 @@
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 HINSTANCE           hInst;
 HWND                hMainWin;
-NOTIFYICONDATA      nid;
-Window_Info         winInfo;
-
+WINDOWSATUSINFO     winInfo;
+HMENU               hMenu, hSubMenu;
+void ShowCustomInputDialog();
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
 {
-    HANDLE hMutex = CreateMutex(NULL, TRUE, _T("UniqueAppMutex"));
+    HANDLE hMutex = CreateMutex(NULL, TRUE, _T("UniqueAiAssistMutex"));
 
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        HWND hWnd = FindWindow(_T("Copilot_UniqueWindowClass"),NULL);
+        HWND hWnd = FindWindow(_T("AiAssist_UniqueWindowClass"),NULL);
         if (hWnd) {
             if (IsIconic(hWnd)) {
                 ShowWindow(hWnd, SW_RESTORE); // 显示窗口
-            }
-            else {
+            } else {
                 if (!IsWindowVisible(hWnd)) {
                     ShowWindow(hWnd, SW_SHOW);
                     SetForegroundWindow(hWnd);
@@ -61,7 +60,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
 	wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
 	wcex.hbrBackground = CreateSolidBrush(RGB(250,240,231));;
 	wcex.lpszMenuName = NULL;
-	wcex.lpszClassName = _T("Copilot_UniqueWindowClass");
+	wcex.lpszClassName = _T("AiAssist_UniqueWindowClass");
 	wcex.hIconSm = LoadIcon(wcex.hInstance, IDI_APPLICATION);
 	succeeded(
         RegisterClassEx(&wcex),
@@ -70,7 +69,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
     );
     
 	hMainWin = CreateWindowW(
-		L"Copilot_UniqueWindowClass",
+		L"AiAssist_UniqueWindowClass",
 		Config::title.c_str(),
 		WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT,
@@ -86,27 +85,53 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
         ERROR,
         L"创建窗口失败"
     );
-    std::wstring iniFile = Config::userDataFolder + L"/copilot.ini";
-    if(LoadWindowInfo(iniFile, winInfo)<0){
-        getWindowRect();
-        winInfo.state = WIN_STATE::SHOW;
-    }
 
-    AddTrayIcon(hMainWin,hInst);
+    NOTIFYICONDATA nid;
+    nid.cbSize = sizeof(NOTIFYICONDATA);
+    nid.hWnd = hMainWin;
+    nid.uID = ID_TRAY_EXIT;
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAYICON;
+    nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_LOGO));;
+    strcpy_s(nid.szTip, "AiAssist");
+    Shell_NotifyIcon(NIM_ADD, &nid);
 
-    ShowWindow(hMainWin,nCmdShow);
-	UpdateWindow(hMainWin);
+    hMenu = CreatePopupMenu();
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_KEEPLEFT, L"靠左固定");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_KEEPRIGHT, L"靠右固定");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_RESUME, L"悬浮窗口");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_HIDE, L"隐藏窗口");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出程序");
+    // 创建二级菜单
+    hSubMenu = CreatePopupMenu();
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_COPILOT, L"Copilot");
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_CHATGPT, L"ChatGPT");
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_GEMINI, L"Gemini");
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_POE, L"POE");
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_DOUBAO, L"豆包");
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_TONGYI, L"通义千问");
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_KIMI, L"KIMI");
+    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_XINGHUO, L"星火");
+    // 将二级菜单添加到“更换助手”菜单项下
+    ModifyMenuW(hMenu, ID_TRAY_INDEX, MF_BYCOMMAND | MF_POPUP, (UINT_PTR)hSubMenu, L"更换助手");
 
+    //设置快捷键
     succeeded(
-        RegisterHotKey(hMainWin, HOT_KEY1, Config::fsModifiers, Config::vk),
+        RegisterHotKey(hMainWin, HOTKEY_ID1, Config::fsModifiers, Config::vk),
         WARNING,
-        fmt::format(L"设置全局快捷键{}+{}失败",Config::fsModifiers,Config::vk)
+        L"设置全局快捷键失败"
     );
 
-    reApplyWindowSettings(true);
-
+    std::wstring iniFile = Config::userDataFolder + L"/aiassist.ini";
+    if(loadWindowInfo(iniFile, winInfo)<0){
+        loadRectTo(winInfo);
+        winInfo.state = WIN_STATE::FLAOT;
+    }
+    copilotShow(winInfo.state);
     //创建webview2环境
 	CreateCoreWebView2EnvironmentWithOptions(nullptr,Config::userDataFolder.c_str() , nullptr,pCreateEnvCallback.Get());
+
+
 
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))
@@ -114,9 +139,13 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
+
+    
     //退出事件循环后为结束应用做收尾工作
-    UnregisterHotKey(hMainWin, HOT_KEY1);
-    SaveWindowInfo(iniFile, winInfo);
+    UnregisterHotKey(hMainWin, HOTKEY_ID1);
+    saveWindowInfo(iniFile, winInfo);
+    Shell_NotifyIcon(NIM_DELETE, &nid);
+    DestroyMenu(hMenu);
     ReleaseMutex(hMutex);
     CloseHandle(hMutex);
 	return (int)msg.wParam;
@@ -125,32 +154,28 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
 //事件循环回调函数
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	switch (message){
+	switch (message)
+	{
     case WM_ACTIVATE:
-        if (wParam != WA_INACTIVE) {
-            if (webviewController != nullptr) {
+        if(wParam != WA_INACTIVE){
+            if(webviewController != nullptr){
                 webviewController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
             }
         }
         break;
     case WM_HOTKEY:
-        if (wParam == 5 || wParam == 6) {
-            reApplyWindowSettings();
+        if (wParam == HOTKEY_ID1) {
+            //相当于单击托盘图标
+            SendMessage(hWnd, WM_TRAYICON, 0, WM_LBUTTONUP);
         }
         break;
     case WM_CLOSE:
-        ShowWindow(hMainWin, SW_HIDE);
+        copilotShow(WIN_STATE::HIDE);
         return 0;
 	case WM_DESTROY:
-        getWindowRect();
-        Shell_NotifyIcon(NIM_DELETE, &nid);
 		PostQuitMessage(0);
 		break;
-    case WM_MOVE:
     case WM_SIZE:
-        RECT rect;
-        GetWindowRect(hWnd, &rect);
-        setWindowRect(rect);
         if(webviewController != nullptr){
             RECT bounds;
             GetClientRect(hMainWin, &bounds);
@@ -158,38 +183,95 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_TRAYICON:
-        if (lParam == WM_RBUTTONUP) {
-            ShowTrayMenu(hWnd);
-        } 
-        break;
+            if (lParam == WM_RBUTTONUP) {
+                POINT pt;
+                GetCursorPos(&pt);
+                SetForegroundWindow(hMainWin);
+                TrackPopupMenu(hMenu, TPM_RIGHTBUTTON|TPM_LEFTBUTTON|TPM_VERNEGANIMATION, pt.x, pt.y, 0, hMainWin, NULL);
+            }
+            if (lParam == WM_LBUTTONUP) {
+                if(IsIconic(hMainWin)){
+                    ShowWindow(hMainWin, SW_RESTORE);
+                    SetForegroundWindow(hMainWin);
+                }
+                else {
+                    if (IsWindowVisible(hMainWin)) {
+                        if (winInfo.state == WIN_STATE::FLAOT) {
+                            if (GetForegroundWindow() != hMainWin) {
+                                SetForegroundWindow(hMainWin);
+                            }
+                            else {
+                                copilotShow(WIN_STATE::HIDE);
+                            }
+                        }
+                        else {
+                            copilotShow(WIN_STATE::HIDE);
+                        }
+                    }
+                    else {
+                        copilotShow(winInfo.state);
+                    }
+                }
+            }
+            break;
     case WM_COMMAND:
-        WIN_STATE preState;
         switch (LOWORD(wParam)) {
+        case ID_TRAY_COPILOT:
+            winInfo.Index = L"https://copilot.microsoft.com/";
+            webview->Navigate(winInfo.Index.c_str());
+            break;  
+        case ID_TRAY_CHATGPT:
+            winInfo.Index = L"https://chatgpt.com/";
+            webview->Navigate(winInfo.Index.c_str());
+            break;
+        case ID_TRAY_DOUBAO:
+            winInfo.Index = L"https://www.doubao.com/chat/";
+            webview->Navigate(winInfo.Index.c_str());
+            break;
+        case ID_TRAY_TONGYI:
+            winInfo.Index = L"https://tongyi.aliyun.com/";
+            webview->Navigate(winInfo.Index.c_str());
+            break;
+        case ID_TRAY_GEMINI:
+            winInfo.Index = L"https://gemini.google.com/";
+            webview->Navigate(winInfo.Index.c_str());
+            break;
+        case ID_TRAY_KIMI:
+            winInfo.Index = L"https://kimi.moonshot.cn/";
+            webview->Navigate(winInfo.Index.c_str());
+            break;
+        case ID_TRAY_XINGHUO:
+            winInfo.Index = L"https://xinghuo.xfyun.cn/desk";
+            webview->Navigate(winInfo.Index.c_str());
+            break;
+        case ID_TRAY_POE:
+            winInfo.Index = L"https://poe.com/";
+            webview->Navigate(winInfo.Index.c_str());
+            break;
         case ID_TRAY_EXIT:
-            DestroyWindow(hWnd);
+            loadRectTo(winInfo);
+            DestroyWindow(hMainWin);
             break;
         case ID_TRAY_KEEPLEFT:
-            preState = winInfo.state;
-            winInfo.state=WIN_STATE::LEFT;
-            reApplyWindowSettings(preState != winInfo.state);
+            if(winInfo.state!=WIN_STATE::LEFT){
+                winInfo.state=WIN_STATE::LEFT;
+                copilotShow(WIN_STATE::LEFT);
+            }
             break;
         case ID_TRAY_KEEPRIGHT:
-            preState = winInfo.state;
-            winInfo.state=WIN_STATE::RIGHT;
-            reApplyWindowSettings(preState != winInfo.state);
+            if(winInfo.state!=WIN_STATE::RIGHT){
+                winInfo.state=WIN_STATE::RIGHT;
+                copilotShow(WIN_STATE::RIGHT);
+            }
             break;
         case ID_TRAY_RESUME:
-            preState = winInfo.state;
-            winInfo.state=WIN_STATE::SHOW;
-            reApplyWindowSettings(preState != winInfo.state);
+            winInfo.state=WIN_STATE::FLAOT;
+            copilotShow(WIN_STATE::FLAOT);
             break;
         case ID_TRAY_HIDE:
-            preState = winInfo.state;
-            winInfo.state = WIN_STATE::SHOW;
-            reApplyWindowSettings(preState != winInfo.state);
+            copilotShow(WIN_STATE::HIDE);
             break;
         }
-        break;
 	default:
 		return DefWindowProc(hWnd, message, wParam, lParam);
 		break;
