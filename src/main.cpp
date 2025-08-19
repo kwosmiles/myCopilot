@@ -10,7 +10,8 @@
 #include <fmt/core.h>
 #include <fmt/xchar.h>
 
-
+#include <locale>
+#include <codecvt>
 #include "resource.hpp"
 #include "webview.hpp"
 #include "utils.hpp"
@@ -21,7 +22,95 @@ HINSTANCE           hInst;
 HWND                hMainWin;
 WINDOWSATUSINFO     winInfo;
 HMENU               hMenu, hSubMenu;
+
+AssistantConfig assistantConfig[255];
 void ShowCustomInputDialog();
+std::string WStringToString(const std::wstring& wstr);
+std::wstring StringToWString(const std::string& str);
+// 检查是否已经设置为自启动
+bool IsStartupSet(const TCHAR* appName) {
+    HKEY hKey;
+    LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Run"), 0, KEY_READ, &hKey);
+
+    if (result == ERROR_SUCCESS) {
+        TCHAR value[MAX_PATH];
+        DWORD size = sizeof(value);
+
+        result = RegQueryValueEx(hKey, appName, nullptr, nullptr, (LPBYTE)value, &size);
+
+        RegCloseKey(hKey);
+
+        if (result == ERROR_SUCCESS) {
+            // 应用程序已经设置为开机自启动
+            return true;
+        }
+    }
+
+    // 应用程序未设置为开机自启动
+    return false;
+}
+
+// 设置菜单项的选中状态
+void SetAutoStartMenuItem(HMENU hMenu, UINT uID, bool isChecked) {
+    UINT uCheck = isChecked ? MF_CHECKED : MF_UNCHECKED;
+    CheckMenuItem(hMenu, uID, MF_BYCOMMAND | uCheck);
+}
+
+/*AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_COPILOT, L"Copilot");
+AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_CHATGPT, L"ChatGPT");
+AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_GEMINI, L"Gemini");
+AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_POE, L"POE");
+AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_DOUBAO, L"豆包");
+AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_TONGYI, L"通义千问");
+AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_KIMI, L"KIMI");
+AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_XINGHUO, L"星火");*/
+
+void SetAssistChecked(HMENU hMenu, int state, bool setting) {
+     SetAutoStartMenuItem(hMenu, state, setting);
+}
+
+// 设置开机自启动
+void SetStartup() {
+    HKEY hKey;
+    LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Run"), 0, KEY_SET_VALUE, &hKey);
+
+    if (result == ERROR_SUCCESS) {
+        const TCHAR* appName = TEXT("AiAssist");
+        char buffer[MAX_PATH];
+        DWORD size = GetModuleFileNameA(NULL, buffer, MAX_PATH);
+        if (size == 0) {
+            return;
+        }
+        const TCHAR* appPath = TEXT(buffer);
+
+        if (strlen(appPath) != 0) {
+            RegSetValueEx(hKey, appName, 0, REG_SZ, (BYTE*)appPath, (lstrlen(appPath) + 1) * sizeof(TCHAR));
+            RegCloseKey(hKey);
+        } 
+    }
+}
+// 取消开机自启动
+void RemoveStartup(const TCHAR* appName) {
+    HKEY hKey;
+    LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Run"), 0, KEY_SET_VALUE, &hKey);
+
+    if (result == ERROR_SUCCESS) {
+        result = RegDeleteValue(hKey, appName);
+
+        RegCloseKey(hKey);
+    }
+}
+
+std::wstring StringToWString1(const std::string& str) {
+    // Calculate the size needed for the wide string
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+    if (size_needed == 0) return L""; // Handle error or empty string case
+
+    std::wstring wstrTo(size_needed, 0);
+    // Convert from UTF-8 to wide string
+    MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
+    return wstrTo;
+}
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLine,int nCmdShow)
 {
@@ -97,41 +186,84 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
     Shell_NotifyIcon(NIM_ADD, &nid);
 
     hMenu = CreatePopupMenu();
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_INDEX, L"更换助手");
     AppendMenuW(hMenu, MF_STRING, ID_TRAY_KEEPLEFT, L"靠左固定");
     AppendMenuW(hMenu, MF_STRING, ID_TRAY_KEEPRIGHT, L"靠右固定");
     AppendMenuW(hMenu, MF_STRING, ID_TRAY_RESUME, L"悬浮窗口");
     AppendMenuW(hMenu, MF_STRING, ID_TRAY_HIDE, L"隐藏窗口");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_AUTOSTART, L"自动启动");
     AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出程序");
     // 创建二级菜单
     hSubMenu = CreatePopupMenu();
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_COPILOT, L"Copilot");
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_CHATGPT, L"ChatGPT");
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_GEMINI, L"Gemini");
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_POE, L"POE");
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_DOUBAO, L"豆包");
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_TONGYI, L"通义千问");
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_KIMI, L"KIMI");
-    AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_XINGHUO, L"星火");
+    loadAssistantConfig(assistantConfig, 255);
+    for (int i = 0; i < 255; i++) {
+        if (assistantConfig[i].name.empty()) {
+            break;
+        }
+        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+        std::wstring wide_str = converter.from_bytes(assistantConfig[i].name);
+        AppendMenuW(hSubMenu, MF_STRING, assistantConfig[i].id, wide_str.c_str());
+    }   
+    ////读取配置文件的设置
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_COPILOT, L"Copilot");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_CHATGPT, L"ChatGPT");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_GEMINI, L"Gemini");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_GROK, L"Grok");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_POE, L"POE");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_DOUBAO, L"豆包");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_TONGYI, L"通义千问");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_KIMI, L"KIMI");
+    //AppendMenuW(hSubMenu, MF_STRING, ID_TRAY_XINGHUO, L"星火");
     // 将二级菜单添加到“更换助手”菜单项下
     ModifyMenuW(hMenu, ID_TRAY_INDEX, MF_BYCOMMAND | MF_POPUP, (UINT_PTR)hSubMenu, L"更换助手");
-
+    
     //设置快捷键
     succeeded(
         RegisterHotKey(hMainWin, HOTKEY_ID1, Config::fsModifiers, Config::vk),
         WARNING,
         L"设置全局快捷键失败"
     );
+    succeeded(
+        RegisterHotKey(hMainWin, HOTKEY_IDNUM6, Config::fsModifiers, Config::vk1),
+        WARNING,
+        L"设置全局快捷键失败"
+    );
+    succeeded(
+        RegisterHotKey(hMainWin, HOTKEY_IDNUM7, Config::fsModifiers, Config::vk2),
+        WARNING,
+        L"设置全局快捷键失败"
+    );
+    succeeded(
+        RegisterHotKey(hMainWin, HOTKEY_IDNUM8, Config::fsModifiers, Config::vk3),
+        WARNING,
+        L"设置全局快捷键失败"
+    );
+    succeeded(
+        RegisterHotKey(hMainWin, HOTKEY_IDNUM9, Config::fsModifiers, Config::vk4),
+        WARNING,
+        L"设置全局快捷键失败"
+    );
+    succeeded(
+        RegisterHotKey(hMainWin, HOTKEY_IDNUM10, Config::fsModifiers, Config::vk5),
+        WARNING,
+        L"设置全局快捷键失败"
+    );
 
-    std::wstring iniFile = Config::userDataFolder + L"/aiassist.ini";
-    if(loadWindowInfo(iniFile, winInfo)<0){
+    if(loadWindowInfo(winInfo)<0){
         loadRectTo(winInfo);
         winInfo.state = WIN_STATE::FLAOT;
+    }
+
+    SetAutoStartMenuItem(hMenu, ID_TRAY_AUTOSTART, IsStartupSet("AiAssist"));
+    SetAssistChecked(hMenu, winInfo.IndexState, true);
+    if (winInfo.AutoStart) {
+        if (!IsStartupSet("AiAssist")) {
+            SetStartup();
+        }
     }
     copilotShow(winInfo.state);
     //创建webview2环境
 	CreateCoreWebView2EnvironmentWithOptions(nullptr,Config::userDataFolder.c_str() , nullptr,pCreateEnvCallback.Get());
-
-
 
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))
@@ -143,7 +275,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,LPSTR lpCmdLin
     
     //退出事件循环后为结束应用做收尾工作
     UnregisterHotKey(hMainWin, HOTKEY_ID1);
-    saveWindowInfo(iniFile, winInfo);
+    saveWindowInfo(winInfo);
     Shell_NotifyIcon(NIM_DELETE, &nid);
     DestroyMenu(hMenu);
     ReleaseMutex(hMutex);
@@ -164,10 +296,83 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_HOTKEY:
-        if (wParam == HOTKEY_ID1) {
-            //相当于单击托盘图标
-            SendMessage(hWnd, WM_TRAYICON, 0, WM_LBUTTONUP);
-        }
+        switch (wParam) {
+            case HOTKEY_ID1:
+                if (IsIconic(hMainWin)) {
+                    ShowWindow(hMainWin, SW_RESTORE);
+                    SetForegroundWindow(hMainWin);
+                }
+                else {
+                    if (IsWindowVisible(hMainWin)) {
+                        if (GetForegroundWindow() != hMainWin) {
+                            SetForegroundWindow(hMainWin);
+                        }
+                        else {
+                            copilotShow(WIN_STATE::HIDE);
+                        }
+                    }
+                    else {
+                        copilotShow(winInfo.state);
+                    }
+                }
+                break;
+            case HOTKEY_IDNUM6:
+                if (assistantConfig[0].id == 0) {
+                    break;
+                }
+                winInfo.Index = StringToWString(assistantConfig[0].index);
+                SetAssistChecked(hMenu, winInfo.IndexState, false);
+                winInfo.IndexState = 200;
+                SetAssistChecked(hMenu, winInfo.IndexState, true);
+                webview->Navigate(winInfo.Index.c_str());
+                break;
+            case HOTKEY_IDNUM7:
+                if (assistantConfig[1].id == 0){
+                    break;
+                }
+                winInfo.Index = StringToWString(assistantConfig[1].index);
+                SetAssistChecked(hMenu, winInfo.IndexState, false);
+                winInfo.IndexState = 201;
+                SetAssistChecked(hMenu, winInfo.IndexState, true);
+                webview->Navigate(winInfo.Index.c_str());
+                break;
+            case HOTKEY_IDNUM8:
+                if (assistantConfig[2].id == 0) {
+                    break;
+                }
+                winInfo.Index = StringToWString(assistantConfig[2].index);
+                SetAssistChecked(hMenu, winInfo.IndexState, false);
+                winInfo.IndexState = 202;
+                SetAssistChecked(hMenu, winInfo.IndexState, true);
+                webview->Navigate(winInfo.Index.c_str());
+                break;
+            case HOTKEY_IDNUM9:
+                if (assistantConfig[3].id == 0) {
+                    break;
+                }
+                winInfo.Index = StringToWString(assistantConfig[3].index);
+                SetAssistChecked(hMenu, winInfo.IndexState, false);
+                winInfo.IndexState = 203;
+                SetAssistChecked(hMenu, winInfo.IndexState, true);
+                webview->Navigate(winInfo.Index.c_str());
+                break;
+            case HOTKEY_IDNUM10:
+                if (assistantConfig[4].id == 0) {
+                    break;
+                }
+                winInfo.Index = StringToWString(assistantConfig[4].index);
+                SetAssistChecked(hMenu, winInfo.IndexState, false);
+                winInfo.IndexState = 204;
+                SetAssistChecked(hMenu, winInfo.IndexState, true);
+                webview->Navigate(winInfo.Index.c_str());
+                break;
+            default:
+                break;
+        };
+        //if (wParam == HOTKEY_ID1) {
+        //    //相当于单击托盘图标
+        //    SendMessage(hWnd, WM_TRAYICON, 0, WM_LBUTTONUP);
+        //}
         break;
     case WM_CLOSE:
         copilotShow(WIN_STATE::HIDE);
@@ -189,14 +394,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 SetForegroundWindow(hMainWin);
                 TrackPopupMenu(hMenu, TPM_RIGHTBUTTON|TPM_LEFTBUTTON|TPM_VERNEGANIMATION, pt.x, pt.y, 0, hMainWin, NULL);
             }
-            if (lParam == WM_LBUTTONUP) {
-                if(IsIconic(hMainWin)){
-                    ShowWindow(hMainWin, SW_RESTORE);
-                    SetForegroundWindow(hMainWin);
-                }
-                else {
-                    if (IsWindowVisible(hMainWin)) {
-                        if (winInfo.state == WIN_STATE::FLAOT) {
+            switch(lParam) {
+                case WM_LBUTTONUP:
+                    if (IsIconic(hMainWin)) {
+                        ShowWindow(hMainWin, SW_RESTORE);
+                        SetForegroundWindow(hMainWin);
+                    }
+                    else {
+                        if (IsWindowVisible(hMainWin)) {
                             if (GetForegroundWindow() != hMainWin) {
                                 SetForegroundWindow(hMainWin);
                             }
@@ -205,48 +410,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             }
                         }
                         else {
-                            copilotShow(WIN_STATE::HIDE);
+                            copilotShow(winInfo.state);
                         }
                     }
-                    else {
-                        copilotShow(winInfo.state);
-                    }
-                }
+                    break;
+                case WM_RBUTTONUP:
+                    break;
+                case WM_LBUTTONDBLCLK:
+                    break;
+                case WM_MBUTTONUP:
+                    break;
             }
             break;
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
-        case ID_TRAY_COPILOT:
-            winInfo.Index = L"https://copilot.microsoft.com/";
-            webview->Navigate(winInfo.Index.c_str());
-            break;  
-        case ID_TRAY_CHATGPT:
-            winInfo.Index = L"https://chatgpt.com/";
-            webview->Navigate(winInfo.Index.c_str());
-            break;
-        case ID_TRAY_DOUBAO:
-            winInfo.Index = L"https://www.doubao.com/chat/";
-            webview->Navigate(winInfo.Index.c_str());
-            break;
-        case ID_TRAY_TONGYI:
-            winInfo.Index = L"https://tongyi.aliyun.com/";
-            webview->Navigate(winInfo.Index.c_str());
-            break;
-        case ID_TRAY_GEMINI:
-            winInfo.Index = L"https://gemini.google.com/";
-            webview->Navigate(winInfo.Index.c_str());
-            break;
-        case ID_TRAY_KIMI:
-            winInfo.Index = L"https://kimi.moonshot.cn/";
-            webview->Navigate(winInfo.Index.c_str());
-            break;
-        case ID_TRAY_XINGHUO:
-            winInfo.Index = L"https://xinghuo.xfyun.cn/desk";
-            webview->Navigate(winInfo.Index.c_str());
-            break;
-        case ID_TRAY_POE:
-            winInfo.Index = L"https://poe.com/";
-            webview->Navigate(winInfo.Index.c_str());
+        case ID_TRAY_AUTOSTART:
+            winInfo.AutoStart = !winInfo.AutoStart;
+            if (winInfo.AutoStart) {
+                if (!IsStartupSet("AiAssist")) {
+                    SetStartup();
+                }
+            }
+            else {
+                if (IsStartupSet("AiAssist")) {
+                    RemoveStartup("AiAssist");
+                }
+            }
+            SetAutoStartMenuItem(hMenu, ID_TRAY_AUTOSTART, winInfo.AutoStart);
             break;
         case ID_TRAY_EXIT:
             loadRectTo(winInfo);
@@ -271,11 +461,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case ID_TRAY_HIDE:
             copilotShow(WIN_STATE::HIDE);
             break;
+            default :
+                if (LOWORD(wParam) >= 200 && LOWORD(wParam) < ID_TRAY_BASE + 255) {
+                    int index = LOWORD(wParam) - ID_TRAY_BASE;
+                    winInfo.Index = StringToWString(assistantConfig[index].index);
+                    SetAssistChecked(hMenu, winInfo.IndexState, false);
+                    winInfo.IndexState = LOWORD(wParam);
+                    SetAssistChecked(hMenu, winInfo.IndexState, true);
+                    webview->Navigate(winInfo.Index.c_str());
+                }
         }
+        break;
 	default:
 		return DefWindowProc(hWnd, message, wParam, lParam);
 		break;
 	}
-
+    loadRectTo(winInfo);
+    saveWindowInfo(winInfo);
 	return 0;
 }
+

@@ -22,6 +22,16 @@ namespace Config
     //https://learn.microsoft.com/zh-cn/windows/win32/inputdev/virtual-key-codes
     //示例：当fsModifiers=MOD_ALT，vk=0x43时设置的快捷键是Alt+c
     inline UINT fsModifiers         = MOD_ALT;             //快捷键的修饰符
-    inline UINT vk                  = 0x43;                //快捷键的虚拟键值代码
+    inline UINT vk = 0x43;                //快捷键的虚拟键值代码
+    inline UINT vk1= 0x31;                //快捷键的虚拟键值代码
+    inline UINT vk2 = 0x32;                //快捷键的虚拟键值代码
+    inline UINT vk3 = 0x33;                //快捷键的虚拟键值代码
+    inline UINT vk4 = 0x34;                //快捷键的虚拟键值代码
+    inline UINT vk5 = 0x35;                //快捷键的虚拟键值代码
 
 };
+typedef struct Assistant {
+    std::string name;
+    int id;
+    std::string index;
+}AssistantConfig;
